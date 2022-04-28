@@ -25,7 +25,10 @@ public class WorldGenerator : MonoBehaviour
     [SerializeField] private Material material;
 
     private List<WorldTerrainChunk> _chunks;
+    
     private float _prevDetail = 0.001f;
+    private Vector2Int _prevStartChunkPos;
+    private Vector2Int _prevVisibleChunksCount;
 
     private void Awake()
     {
@@ -70,14 +73,38 @@ public class WorldGenerator : MonoBehaviour
     private void GenerateVisibleChunks()
     {
         float currentDetail = CalcDetailFromVisibleChunksCount();
-
         Vector2Int startChunkPos = CalcBottomLeftCornerVisibleChunkPos();
         Vector2Int visibleChunksCount = CalcVisibleChunksCount();
-        // General rule: The less chunks loaded, the higher detail that can be loaded.
+
+        if (_prevDetail == currentDetail && _prevStartChunkPos == startChunkPos) return;
+
+        // Unload previously loaded chunks
+        for (int y = 0, i = 0; y < _prevVisibleChunksCount.y; y++)
+        {
+            for (int x = 0; x < _prevVisibleChunksCount.x; x++, i++)
+            {
+                // Don't unload the chunks that are visible now.
+                if (x >= startChunkPos.x && x < startChunkPos.x + x)
+                    if (y >= startChunkPos.y && y < startChunkPos.y + y) continue;
+
+                WorldTerrainChunk chunk = _chunks[((_prevStartChunkPos.y + y) * _width) + _prevStartChunkPos.x + x];
+                float[,] heightMap = GenerateHeightMap(_prevStartChunkPos + new Vector2Int(x, y), 0.001f);
+
+                chunk.ApplyHeightMap(heightMap);
+            }
+        }
+
+        _prevStartChunkPos = startChunkPos;
+        _prevVisibleChunksCount = visibleChunksCount;
+
+        // Load new chunks
         for (int y = 0, i = 0; y < visibleChunksCount.y; y++)
         {
             for (int x = 0; x < visibleChunksCount.x; x++, i++)
             {
+                // if (x >= _prevStartChunkPos.x && x < _prevStartChunkPos.x + x)
+                    // if (y >= _prevStartChunkPos.y && y < _prevStartChunkPos.y + y) continue;
+
                 WorldTerrainChunk chunk = _chunks[((startChunkPos.y + y) * _width) + startChunkPos.x + x];
                 float[,] heightMap = GenerateHeightMap(startChunkPos + new Vector2Int(x, y), currentDetail);
 
@@ -92,20 +119,20 @@ public class WorldGenerator : MonoBehaviour
 
     private float[,] GenerateHeightMap(Vector2Int chunkPos, float detail)
     {
-        int visibleChunkWidth = Mathf.FloorToInt(_chunkSize * detail);
-        int visibleChunkHeight = Mathf.FloorToInt(_chunkSize * detail);
+        int visibleChunkWidth = Mathf.FloorToInt((float)_chunkSize * detail);
+        int visibleChunkHeight = Mathf.FloorToInt((float)_chunkSize * detail);
 
         float[,] heightMap = new float[visibleChunkWidth + 1, visibleChunkHeight + 1];
 
-        float chunkXT = Mathf.InverseLerp(0, _chunkSize, _chunkSize / visibleChunkWidth);
-        float chunkYT = Mathf.InverseLerp(0, _chunkSize, _chunkSize / visibleChunkHeight);
+        float chunkXT = Mathf.InverseLerp(0, _chunkSize, (float)_chunkSize / visibleChunkWidth);
+        float chunkYT = Mathf.InverseLerp(0, _chunkSize, (float)_chunkSize / visibleChunkHeight);
 
         for (int tileY = 0; tileY <= visibleChunkHeight; tileY++)
         {
             for (int tileX = 0; tileX <= visibleChunkWidth; tileX++)
             {
-                int currTileX = Mathf.FloorToInt(_chunkSize * (tileX * chunkXT));
-                int currTileY = Mathf.FloorToInt(_chunkSize * (tileY * chunkYT));
+                int currTileX = Mathf.FloorToInt(_chunkSize * Mathf.Clamp01(tileX * chunkXT));
+                int currTileY = Mathf.FloorToInt(_chunkSize * Mathf.Clamp01(tileY * chunkYT));
 
                 Vector2 offset = _offset + new Vector2Int(chunkPos.x * _chunkSize, chunkPos.y * _chunkSize);
 
@@ -138,6 +165,7 @@ public class WorldGenerator : MonoBehaviour
 
         Vector3 size = end - start;
         Vector2Int chunksSize = new Vector2Int(Mathf.CeilToInt(size.x / _chunkSize), Mathf.CeilToInt(size.z / _chunkSize));
+        chunksSize = new Vector2Int(Mathf.Clamp(chunksSize.x + 1, 0, _width), Mathf.Clamp(chunksSize.y + 1, 0, _height));
 
         return chunksSize;
     }

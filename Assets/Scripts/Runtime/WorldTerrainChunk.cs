@@ -21,10 +21,10 @@ public class WorldTerrainChunk
         int chunkSize = WorldGenerator.Instance.GetChunkSize();
 
         _terrain = TerrainGenerator.GenerateFlatShaded(heightMap);
-        _terrain.transform.localScale = new Vector3(chunkSize / (heightMap.GetLength(0) - 1), 1, chunkSize / (heightMap.GetLength(1) - 1));
+        _terrain.transform.localScale = new Vector3((float)chunkSize / (float)(heightMap.GetLength(0) - 1), 1, (float)chunkSize / (float)(heightMap.GetLength(1) - 1));
         _terrain.transform.position = new Vector3(_chunkPos.x * chunkSize, 0, _chunkPos.y * chunkSize);
 
-        _detail = (heightMap.GetLength(0) - 1) / chunkSize; 
+        _detail = (float)(heightMap.GetLength(0) - 1) / chunkSize;
     }
 
     public float GetDetail()

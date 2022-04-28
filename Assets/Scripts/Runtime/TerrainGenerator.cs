@@ -21,6 +21,7 @@ public static class TerrainGenerator
         mr.material = material;
         newTerrain.AddComponent<MeshFilter>();
         Mesh mesh = newTerrain.GetComponent<MeshFilter>().mesh = new Mesh();
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
 
         for (int z = 0, i = 0; z < zSize; z += distPerVertex)
         {
