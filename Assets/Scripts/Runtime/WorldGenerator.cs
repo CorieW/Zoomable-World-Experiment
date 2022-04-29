@@ -7,6 +7,7 @@ public class WorldGenerator : MonoBehaviour
     public static WorldGenerator Instance;
 
     private const int MAX_GENERATED_TILES = 10000;
+    private const int CHUNK_BEGIN_LOAD_DISTANCE = 1;
 
     [Header("Dimensions")]
     [SerializeField] private int _width;
@@ -61,8 +62,6 @@ public class WorldGenerator : MonoBehaviour
         {
             for (int x = 0; x < _width; x++)
             {
-                // Vector2 offset = _offset + new Vector2(x * _chunkSize, y * _chunkSize);
-
                 float[,] heightMap = GenerateHeightMap(new Vector2Int(x, y), 0.001f);
 
                 _chunks.Add(new WorldTerrainChunk(new Vector2Int(x, y), heightMap));
@@ -73,7 +72,7 @@ public class WorldGenerator : MonoBehaviour
     private void GenerateVisibleChunks()
     {
         float currentDetail = CalcDetailFromVisibleChunksCount();
-        Vector2Int startChunkPos = CalcBottomLeftCornerVisibleChunkPos();
+        Vector2Int startChunkPos = CalcBottomLeftCornerVisibleChunkIndex();
         Vector2Int visibleChunksCount = CalcVisibleChunksCount();
 
         if (_prevDetail == currentDetail && _prevStartChunkPos == startChunkPos) return;
@@ -87,8 +86,12 @@ public class WorldGenerator : MonoBehaviour
                 if (x >= startChunkPos.x && x < startChunkPos.x + x)
                     if (y >= startChunkPos.y && y < startChunkPos.y + y) continue;
 
-                WorldTerrainChunk chunk = _chunks[((_prevStartChunkPos.y + y) * _width) + _prevStartChunkPos.x + x];
-                float[,] heightMap = GenerateHeightMap(_prevStartChunkPos + new Vector2Int(x, y), 0.001f);
+                Vector2Int chunkPos = _prevStartChunkPos + new Vector2Int(x, y);
+                WorldTerrainChunk chunk = _chunks[((chunkPos.y) * _width) + chunkPos.x];
+                
+                if (chunk.GetDetail() == currentDetail) continue;
+
+                float[,] heightMap = GenerateHeightMap(chunkPos, 0.001f);
 
                 chunk.ApplyHeightMap(heightMap);
             }
@@ -102,11 +105,15 @@ public class WorldGenerator : MonoBehaviour
         {
             for (int x = 0; x < visibleChunksCount.x; x++, i++)
             {
-                // if (x >= _prevStartChunkPos.x && x < _prevStartChunkPos.x + x)
-                    // if (y >= _prevStartChunkPos.y && y < _prevStartChunkPos.y + y) continue;
+                if (x >= _prevStartChunkPos.x && x < _prevStartChunkPos.x + x)
+                    if (y >= _prevStartChunkPos.y && y < _prevStartChunkPos.y + y) continue;
 
-                WorldTerrainChunk chunk = _chunks[((startChunkPos.y + y) * _width) + startChunkPos.x + x];
-                float[,] heightMap = GenerateHeightMap(startChunkPos + new Vector2Int(x, y), currentDetail);
+                Vector2Int chunkPos = _prevStartChunkPos + new Vector2Int(x, y);
+                WorldTerrainChunk chunk = _chunks[((chunkPos.y) * _width) + chunkPos.x];
+
+                if (chunk.GetDetail() == currentDetail) continue;
+
+                float[,] heightMap = GenerateHeightMap(chunkPos, currentDetail);
 
                 if (chunk.GetDetail() == currentDetail) continue;
 
@@ -144,14 +151,20 @@ public class WorldGenerator : MonoBehaviour
         return heightMap;
     }
 
-    private Vector2Int CalcBottomLeftCornerVisibleChunkPos()
+    #region Helper Methods
+
+    private Vector2Int CalcBottomLeftCornerVisibleChunkIndex()
     {
         Vector3 start = Camera.main.ViewportToWorldPoint(new Vector3(0, 0, Camera.main.transform.position.y));
 
         // Clamp to borders
         start = new Vector3(Mathf.Clamp(start.x, 0, _width *_chunkSize), 0, Mathf.Clamp(start.z, 0, _height *_chunkSize));
 
-        return new Vector2Int(Mathf.FloorToInt(start.x / _chunkSize), Mathf.FloorToInt(start.z / _chunkSize));
+        Vector2Int startChunkPos = new Vector2Int(Mathf.FloorToInt(start.x / _chunkSize), Mathf.FloorToInt(start.z / _chunkSize));
+        
+        // Clamp the start chunk pos to 0 - 99 (given width and height are 100).
+        // This is to prevent going outside of array bounds, as obviously arrays start from 0.
+        return new Vector2Int(Mathf.Clamp(startChunkPos.x - CHUNK_BEGIN_LOAD_DISTANCE, 0, _width - 1), Mathf.Clamp(startChunkPos.y - CHUNK_BEGIN_LOAD_DISTANCE, 0, _height - 1));
     }
 
     private Vector2Int CalcVisibleChunksCount()
@@ -159,13 +172,17 @@ public class WorldGenerator : MonoBehaviour
         Vector3 start = Camera.main.ViewportToWorldPoint(new Vector3(0, 0, Camera.main.transform.position.y));
         Vector3 end = Camera.main.ViewportToWorldPoint(new Vector3(1, 1, Camera.main.transform.position.y));
 
+        // Add additional render space.
+        start -= new Vector3(CHUNK_BEGIN_LOAD_DISTANCE * _chunkSize, 0, CHUNK_BEGIN_LOAD_DISTANCE * _chunkSize);
+        end += new Vector3(CHUNK_BEGIN_LOAD_DISTANCE * _chunkSize, 0, CHUNK_BEGIN_LOAD_DISTANCE * _chunkSize);
+
         // Clamp to borders
         start = new Vector3(Mathf.Clamp(start.x, 0, _width *_chunkSize), 0, Mathf.Clamp(start.z, 0, _height *_chunkSize));
         end = new Vector3(Mathf.Clamp(end.x, 0, _width *_chunkSize), 0, Mathf.Clamp(end.z, 0, _height *_chunkSize));
 
         Vector3 size = end - start;
         Vector2Int chunksSize = new Vector2Int(Mathf.CeilToInt(size.x / _chunkSize), Mathf.CeilToInt(size.z / _chunkSize));
-        chunksSize = new Vector2Int(Mathf.Clamp(chunksSize.x + 1, 0, _width), Mathf.Clamp(chunksSize.y + 1, 0, _height));
+        chunksSize = new Vector2Int(Mathf.Clamp(chunksSize.x, 0, _width - 1), Mathf.Clamp(chunksSize.y, 0, _height - 1));
 
         return chunksSize;
     }
@@ -176,6 +193,8 @@ public class WorldGenerator : MonoBehaviour
         // return (1 / (float)(CalcVisibleChunksCount().x * CalcVisibleChunksCount().y)) * (MAX_GENERATED_TILES / _chunkSize);
         return 0.001f * (60000 / currZoom);
     }
+
+    #endregion
 
     #region Get Methods
 
@@ -195,42 +214,4 @@ public class WorldGenerator : MonoBehaviour
     }
 
     #endregion
-
-    // private float[,] GenerateHeightMap()
-    // {
-    //     float[,] heightMap = new float[_width, _height];
-
-    //     int visibleChunkWidth = Mathf.FloorToInt(_chunkSize * _detail);
-    //     int visibleChunkHeight = Mathf.FloorToInt(_chunkSize * _detail);
-
-    //     float chunkXT = Mathf.InverseLerp(0, _chunkSize, _chunkSize / visibleChunkWidth);
-    //     float chunkYT = Mathf.InverseLerp(0, _chunkSize, _chunkSize / visibleChunkHeight);
-
-    //     for (int worldY = 0; worldY < _height; worldY += visibleChunkHeight)
-    //     {
-    //         for (int worldX = 0; worldX < _width; worldX += visibleChunkWidth)
-    //         {
-    //             Vector2 offset = _offset + new Vector2Int((worldX / visibleChunkWidth) * _chunkSize, (worldY / visibleChunkHeight) * _chunkSize);
-                
-    //             for (int chunkY = 0; chunkY < visibleChunkHeight; chunkY++)
-    //             {
-    //                 for (int chunkX = 0; chunkX < visibleChunkWidth; chunkX++)
-    //                 {
-    //                     int currChunkX = Mathf.FloorToInt(_chunkSize * (chunkX * chunkXT));
-    //                     int currChunkY = Mathf.FloorToInt(_chunkSize * (chunkY * chunkYT));
-
-    //                     if (worldX + chunkX >= _width) break;
-    //                     if (worldY + chunkY >= _height) return heightMap;
-
-    //                     float[,] noise = PerlinNoise.GeneratePerlinNoise(1, 1, _seed, _scale, _octaves, offset + new Vector2(currChunkX, currChunkY), 0.5f, 2, 0, PerlinNoise.NormalizeMode.Global);
-
-    //                     heightMap[worldX + chunkX, worldY + chunkY] = noise[0, 0] * multiplier;
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     return heightMap;
-    // }
-
 }
